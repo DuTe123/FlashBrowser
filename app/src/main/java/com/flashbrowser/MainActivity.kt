@@ -3,6 +3,7 @@ package com.flashbrowser
 import android.annotation.SuppressLint
 import android.content.pm.ActivityInfo
 import android.os.Bundle
+import android.util.Log
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
@@ -21,10 +22,12 @@ class MainActivity : AppCompatActivity() {
     private var virtualMouseEnabled = false
     private var virtualKeyboardEnabled = false
     private var isFullscreen = false
+    private var currentSwfUrl: String? = null
 
     companion object {
         private const val HOME_URL = "https://www.4399.com"
         private const val DESKTOP_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        private const val TAG = "FlashBrowser"
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -60,7 +63,11 @@ class MainActivity : AppCompatActivity() {
             userAgentString = DESKTOP_UA
             databaseEnabled = true
             cacheMode = android.webkit.WebSettings.LOAD_DEFAULT
+            javaScriptEnabled = true
         }
+        
+        // 注册JS Bridge
+        binding.webView.addJavascriptInterface(JsBridge(), "Android")
 
         binding.webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(
@@ -79,10 +86,12 @@ class MainActivity : AppCompatActivity() {
             override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
                 super.onPageStarted(view, url, favicon)
                 binding.etAddress.setText(url)
+                currentSwfUrl = null
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
-                injectRuffle()
+                injectFlashSpoof()
+                extractSwfAndPlay()
             }
         }
 
@@ -101,75 +110,75 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun injectRuffle() {
+    private fun injectFlashSpoof() {
+        // 彻底伪装Flash环境
         val script = """
             (function() {
-                if (window.ruffleInjected) return;
-                window.ruffleInjected = true;
+                // 伪装navigator.plugins
+                var fakeFlash = {
+                    name: 'Shockwave Flash',
+                    description: 'Shockwave Flash 33.0 r0',
+                    version: '33.0.0.387',
+                    filename: 'NPSWF32_33_0_0_387.dll',
+                    length: 1
+                };
                 
-                // 彻底伪装Flash插件
                 try {
-                    var fakeFlash = {
-                        name: 'Shockwave Flash',
-                        description: 'Shockwave Flash 33.0 r0',
-                        version: '33.0.0.387',
-                        filename: 'NPSWF32_33_0_0_387.dll',
-                        length: 1
-                    };
                     Object.defineProperty(navigator, 'plugins', {
                         get: function() {
                             var arr = [fakeFlash];
                             arr.namedItem = function(name) { 
                                 return name === 'Shockwave Flash' ? fakeFlash : null; 
                             };
+                            arr.refresh = function() {};
                             return arr;
                         }
                     });
                 } catch(e) {}
                 
-                // 查找SWF地址
-                var swfUrl = null;
-                var objs = document.querySelectorAll('object, embed');
-                for (var i = 0; i < objs.length; i++) {
-                    var src = objs[i].data || objs[i].src;
-                    if (src && src.indexOf('.swf') > -1) {
-                        swfUrl = src;
-                        break;
-                    }
-                }
-                
-                if (!swfUrl) {
-                    var iframes = document.querySelectorAll('iframe');
-                    for (var i = 0; i < iframes.length; i++) {
-                        var src = iframes[i].src || '';
-                        if (src.indexOf('.swf') > -1) {
-                            swfUrl = src;
-                            break;
+                try {
+                    Object.defineProperty(navigator, 'mimeTypes', {
+                        get: function() {
+                            var arr = [{ type: 'application/x-shockwave-flash', suffixes: 'swf', description: 'Shockwave Flash', enabledPlugin: fakeFlash }];
+                            arr.namedItem = function(name) { 
+                                return name === 'application/x-shockwave-flash' ? arr[0] : null; 
+                            };
+                            return arr;
                         }
-                    }
-                }
+                    });
+                } catch(e) {}
                 
-                if (swfUrl) {
-                    var script = document.createElement('script');
-                    script.src = 'https://unpkg.com/@ruffle-rs/ruffle';
-                    script.onload = function() {
-                        if (window.Ruffle) {
-                            window.RufflePlayer = window.Ruffle;
-                            var gameContainer = document.querySelector('#game-container, #flash, .gamebox, #flashgame');
-                            if (!gameContainer) gameContainer = document.body;
-                            gameContainer.innerHTML = '';
-                            gameContainer.style.background = '#000';
-                            gameContainer.style.width = '100%';
-                            gameContainer.style.height = '100vh';
-                            
-                            var player = window.RufflePlayer.newest().createPlayer();
-                            player.style.width = '100%';
-                            player.style.height = '100%';
-                            gameContainer.appendChild(player);
-                            player.load(swfUrl);
+                // 伪装ActiveXObject (IE风格检测)
+                try {
+                    window.ActiveXObject = function(progID) {
+                        if (progID.indexOf('ShockwaveFlash') > -1) {
+                            return {
+                                GetVariable: function(varName) { return '33.0.0.387'; },
+                                FlashVersion: function() { return '33,0,0,387'; }
+                            };
                         }
+                        throw new Error('ActiveXObject not available');
                     };
-                    document.head.appendChild(script);
+                } catch(e) {}
+            })();
+        """.trimIndent()
+        binding.webView.evaluateJavascript(script, null)
+    }
+
+    private fun extractSwfAndPlay() {
+        // 扫描页面源码，提取SWF地址
+        val script = """
+            (function() {
+                var html = document.documentElement.outerHTML;
+                var swfRegex = /(https?:\/\/[^"'\s<>]+\.swf[^"'\s<>]*)/gi;
+                var matches = html.match(swfRegex);
+                
+                if (matches && matches.length > 0) {
+                    // 取第一个匹配的SWF地址
+                    var swfUrl = matches[0];
+                    console.log('Found SWF: ' + swfUrl);
+                    // 通过JS Bridge回调给Android
+                    Android.onSwfFound(swfUrl);
                 }
             })();
         """.trimIndent()
@@ -177,6 +186,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openSwfPlayer(swfUrl: String) {
+        currentSwfUrl = swfUrl
         val html = """
             <!DOCTYPE html>
             <html>
@@ -285,15 +295,25 @@ class MainActivity : AppCompatActivity() {
                     or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
                     or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
             )
-            // 全屏时自动横屏
             requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
         } else {
             supportActionBar?.show()
             binding.toolbarLayout.visibility = View.VISIBLE
             binding.bottomBar.visibility = View.VISIBLE
             window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_VISIBLE
-            // 退出全屏切回竖屏
             requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        }
+    }
+
+    // JS Bridge接口，供JS调用
+    inner class JsBridge {
+        @android.annotation.JavascriptInterface
+        fun onSwfFound(swfUrl: String) {
+            runOnUiThread {
+                Log.d(TAG, "Found SWF: $swfUrl")
+                Toast.makeText(this@MainActivity, "找到SWF游戏，正在加载...", Toast.LENGTH_SHORT).show()
+                openSwfPlayer(swfUrl)
+            }
         }
     }
 
