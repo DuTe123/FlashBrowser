@@ -36,9 +36,8 @@
             android:layout_height="36dp"
             android:layout_marginStart="8dp"
             android:background="?attr/selectableItemBackgroundBorderless"
-            android:src="@android:drawable/ic_menu_send"
-            android:contentDescription="前往"
-            android:tint="#e94560" />
+            android:src="@drawable/ic_go"
+            android:contentDescription="前往" />
     </LinearLayout>
 
     <!-- 进度条 -->
@@ -74,9 +73,8 @@
             android:layout_height="48dp"
             android:layout_weight="1"
             android:background="?attr/selectableItemBackgroundBorderless"
-            android:src="@android:drawable/ic_menu_revert"
-            android:contentDescription="后退"
-            android:tint="#ffffff" />
+            android:src="@drawable/ic_back"
+            android:contentDescription="后退" />
 
         <ImageButton
             android:id="@+id/btnForward"
@@ -84,9 +82,8 @@
             android:layout_height="48dp"
             android:layout_weight="1"
             android:background="?attr/selectableItemBackgroundBorderless"
-            android:src="@android:drawable/ic_menu_forward"
-            android:contentDescription="前进"
-            android:tint="#ffffff" />
+            android:src="@drawable/ic_forward"
+            android:contentDescription="前进" />
 
         <ImageButton
             android:id="@+id/btnRefresh"
@@ -94,9 +91,8 @@
             android:layout_height="48dp"
             android:layout_weight="1"
             android:background="?attr/selectableItemBackgroundBorderless"
-            android:src="@android:drawable/ic_menu_rotate"
-            android:contentDescription="刷新"
-            android:tint="#ffffff" />
+            android:src="@drawable/ic_refresh"
+            android:contentDescription="刷新" />
 
         <ImageButton
             android:id="@+id/btnHome"
@@ -104,9 +100,8 @@
             android:layout_height="48dp"
             android:layout_weight="1"
             android:background="?attr/selectableItemBackgroundBorderless"
-            android:src="@android:drawable/ic_menu_compass"
-            android:contentDescription="主页"
-            android:tint="#ffffff" />
+            android:src="@drawable/ic_home"
+            android:contentDescription="主页" />
 
         <ImageButton
             android:id="@+id/btnMouse"
@@ -114,9 +109,8 @@
             android:layout_height="48dp"
             android:layout_weight="1"
             android:background="?attr/selectableItemBackgroundBorderless"
-            android:src="@android:drawable/ic_menu_compass"
+            android:src="@drawable/ic_mouse"
             android:contentDescription="虚拟鼠标"
-            android:tint="#ffffff"
             android:alpha="0.5" />
 
         <ImageButton
@@ -125,9 +119,8 @@
             android:layout_height="48dp"
             android:layout_weight="1"
             android:background="?attr/selectableItemBackgroundBorderless"
-            android:src="@android:drawable/ic_menu_view"
+            android:src="@drawable/ic_keyboard"
             android:contentDescription="虚拟键盘"
-            android:tint="#ffffff"
             android:alpha="0.5" />
 
         <ImageButton
@@ -136,9 +129,8 @@
             android:layout_height="48dp"
             android:layout_weight="1"
             android:background="?attr/selectableItemBackgroundBorderless"
-            android:src="@android:drawable/ic_menu_fullscreen"
-            android:contentDescription="全屏"
-            android:tint="#ffffff" />
+            android:src="@drawable/ic_fullscreen"
+            android:contentDescription="全屏" />
     </LinearLayout>
 
 </LinearLayout>
