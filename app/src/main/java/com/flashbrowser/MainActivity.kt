@@ -1,21 +1,14 @@
 package com.flashbrowser
 
 import android.annotation.SuppressLint
-import android.content.SharedPreferences
 import android.os.Bundle
-import android.text.Editable
-import android.text.TextWatcher
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
-import android.view.ViewGroup
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import android.widget.EditText
-import android.widget.ImageButton
-import android.widget.LinearLayout
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
@@ -24,14 +17,13 @@ import com.flashbrowser.databinding.ActivityMainBinding
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
-    private lateinit var prefs: SharedPreferences
     private var virtualMouseEnabled = false
     private var virtualKeyboardEnabled = false
     private var isFullscreen = false
 
     companion object {
         private const val HOME_URL = "https://www.4399.com"
-        private const val PREFS_NAME = "FlashBrowserPrefs"
+        private const val DESKTOP_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -40,7 +32,6 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
         AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
 
         setupWebView()
@@ -65,7 +56,9 @@ class MainActivity : AppCompatActivity() {
             displayZoomControls = false
             javaScriptCanOpenWindowsAutomatically = true
             mediaPlaybackRequiresUserGesture = false
-            userAgentString = userAgentString.replace("Mobile", "Mobile FlashBrowser")
+            userAgentString = DESKTOP_UA
+            databaseEnabled = true
+            cacheMode = android.webkit.WebSettings.LOAD_DEFAULT
         }
 
         binding.webView.webViewClient = object : WebViewClient() {
@@ -74,11 +67,18 @@ class MainActivity : AppCompatActivity() {
                 request: WebResourceRequest?
             ): Boolean {
                 val url = request?.url?.toString() ?: return false
+                // 所有链接都在当前WebView打开
                 if (url.endsWith(".swf") || url.contains(".swf?")) {
                     openSwfPlayer(url)
                     return true
                 }
-                return false
+                view?.loadUrl(url)
+                return true
+            }
+
+            override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                super.onPageStarted(view, url, favicon)
+                binding.etAddress.setText(url)
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
@@ -112,11 +112,12 @@ class MainActivity : AppCompatActivity() {
                 script.onload = function() {
                     if (window.Ruffle) {
                         window.RufflePlayer = window.Ruffle;
-                        var flashObjects = document.querySelectorAll('object, embed');
+                        
+                        // 查找所有Flash对象
+                        var flashObjects = document.querySelectorAll('object, embed, [class*="flash"], [id*="flash"]');
                         flashObjects.forEach(function(obj) {
-                            if (obj.type === 'application/x-shockwave-flash' || 
-                                obj.data?.endsWith('.swf') || 
-                                obj.src?.endsWith('.swf')) {
+                            var swfUrl = obj.data || obj.src;
+                            if (swfUrl && (swfUrl.endsWith('.swf') || swfUrl.indexOf('.swf?') > -1)) {
                                 var container = document.createElement('div');
                                 container.style.width = '100%';
                                 container.style.height = '100%';
@@ -127,8 +128,7 @@ class MainActivity : AppCompatActivity() {
                                 player.style.height = '100%';
                                 container.appendChild(player);
                                 
-                                var swfUrl = obj.data || obj.src;
-                                if (swfUrl) player.load(swfUrl);
+                                player.load(swfUrl);
                             }
                         });
                     }
@@ -169,26 +169,31 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun handleVirtualMouse(event: MotionEvent): Boolean {
-        // 虚拟鼠标触摸处理逻辑
         return true
     }
 
     private fun setupToolbar() {
-        binding.etAddress.addTextChangedListener(object : TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
-            override fun afterTextChanged(s: Editable?) {
-                binding.btnGo.setOnClickListener {
-                    var url = s.toString().trim()
-                    if (!url.startsWith("http://") && !url.startsWith("https://")) {
-                        url = "https://www.google.com/search?q=$url"
-                    }
-                    binding.webView.loadUrl(url)
-                    binding.etAddress.clearFocus()
+        // 前往按钮
+        binding.btnGo.setOnClickListener {
+            var input = binding.etAddress.text.toString().trim()
+            if (input.isEmpty()) return@setOnClickListener
+            
+            var url = input
+            // 如果不是网址，用百度搜索
+            if (!url.startsWith("http://") && !url.startsWith("https://")) {
+                // 如果看起来像域名
+                if (url.contains(".") && !url.contains(" ")) {
+                    url = "https://$url"
+                } else {
+                    // 用百度搜索
+                    url = "https://www.baidu.com/s?wd=$url"
                 }
             }
-        })
+            binding.webView.loadUrl(url)
+            binding.etAddress.clearFocus()
+        }
 
+        // 回车键
         binding.etAddress.setOnKeyListener { _, keyCode, event ->
             if (keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN) {
                 binding.btnGo.performClick()
@@ -232,7 +237,6 @@ class MainActivity : AppCompatActivity() {
 
         binding.btnHome.setOnClickListener {
             binding.webView.loadUrl(HOME_URL)
-            binding.etAddress.setText(HOME_URL)
         }
     }
 
