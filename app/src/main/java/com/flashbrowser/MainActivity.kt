@@ -1,20 +1,19 @@
 package com.flashbrowser
 
 import android.annotation.SuppressLint
+import android.content.pm.ActivityInfo
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
-import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import com.flashbrowser.databinding.ActivityMainBinding
-import java.io.ByteArrayInputStream
 
 class MainActivity : AppCompatActivity() {
 
@@ -61,7 +60,6 @@ class MainActivity : AppCompatActivity() {
             userAgentString = DESKTOP_UA
             databaseEnabled = true
             cacheMode = android.webkit.WebSettings.LOAD_DEFAULT
-            setSupportMultipleWindows(false)
         }
 
         binding.webView.webViewClient = object : WebViewClient() {
@@ -70,7 +68,6 @@ class MainActivity : AppCompatActivity() {
                 request: WebResourceRequest?
             ): Boolean {
                 val url = request?.url?.toString() ?: return false
-                // 检测SWF文件，直接打开Ruffle播放器
                 if (url.endsWith(".swf") || url.contains(".swf?")) {
                     openSwfPlayer(url)
                     return true
@@ -105,74 +102,81 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun injectRuffle() {
-        // 注入脚本：1. 伪装Flash插件 2. 加载Ruffle 3. 替换Flash内容
         val script = """
             (function() {
                 if (window.ruffleInjected) return;
                 window.ruffleInjected = true;
                 
-                // 伪装Flash插件，让网站以为有Flash
-                if (!navigator.plugins.namedItem('Shockwave Flash')) {
-                    var fakePlugin = {
+                // 彻底伪装Flash插件
+                try {
+                    var fakeFlash = {
                         name: 'Shockwave Flash',
-                        filename: 'NPSWF32_33_0_0_387.dll',
                         description: 'Shockwave Flash 33.0 r0',
-                        version: '33.0.0.387'
+                        version: '33.0.0.387',
+                        filename: 'NPSWF32_33_0_0_387.dll',
+                        length: 1
                     };
-                    navigator.plugins.push(fakePlugin);
-                }
-                if (!navigator.mimeTypes.namedItem('application/x-shockwave-flash')) {
-                    var fakeMime = { type: 'application/x-shockwave-flash', suffixes: 'swf', description: 'Shockwave Flash' };
-                    navigator.mimeTypes.push(fakeMime);
+                    Object.defineProperty(navigator, 'plugins', {
+                        get: function() {
+                            var arr = [fakeFlash];
+                            arr.namedItem = function(name) { 
+                                return name === 'Shockwave Flash' ? fakeFlash : null; 
+                            };
+                            return arr;
+                        }
+                    });
+                } catch(e) {}
+                
+                // 查找SWF地址
+                var swfUrl = null;
+                var objs = document.querySelectorAll('object, embed');
+                for (var i = 0; i < objs.length; i++) {
+                    var src = objs[i].data || objs[i].src;
+                    if (src && src.indexOf('.swf') > -1) {
+                        swfUrl = src;
+                        break;
+                    }
                 }
                 
-                // 加载Ruffle
-                var script = document.createElement('script');
-                script.src = 'https://unpkg.com/@ruffle-rs/ruffle';
-                script.onload = function() {
-                    if (window.Ruffle) {
-                        window.RufflePlayer = window.Ruffle;
-                        
-                        // 查找所有Flash对象
-                        var flashObjects = document.querySelectorAll('object, embed');
-                        flashObjects.forEach(function(obj) {
-                            var swfUrl = obj.data || obj.src;
-                            if (swfUrl && (swfUrl.endsWith('.swf') || swfUrl.indexOf('.swf?') > -1)) {
-                                var container = document.createElement('div');
-                                container.style.width = '100%';
-                                container.style.height = '100%';
-                                container.style.position = 'relative';
-                                container.style.background = '#000';
-                                obj.parentNode?.replaceChild(container, obj);
-                                
-                                var player = window.RufflePlayer.newest().createPlayer();
-                                player.style.width = '100%';
-                                player.style.height = '100%';
-                                container.appendChild(player);
-                                
-                                player.load(swfUrl);
-                            }
-                        });
-                        
-                        // 查找iframe里的游戏
-                        var iframes = document.querySelectorAll('iframe');
-                        iframes.forEach(function(iframe) {
-                            var src = iframe.src || '';
-                            if (src.indexOf('.swf') > -1) {
-                                iframe.style.width = '100%';
-                                iframe.style.height = '600px';
-                            }
-                        });
+                if (!swfUrl) {
+                    var iframes = document.querySelectorAll('iframe');
+                    for (var i = 0; i < iframes.length; i++) {
+                        var src = iframes[i].src || '';
+                        if (src.indexOf('.swf') > -1) {
+                            swfUrl = src;
+                            break;
+                        }
                     }
-                };
-                document.head.appendChild(script);
+                }
+                
+                if (swfUrl) {
+                    var script = document.createElement('script');
+                    script.src = 'https://unpkg.com/@ruffle-rs/ruffle';
+                    script.onload = function() {
+                        if (window.Ruffle) {
+                            window.RufflePlayer = window.Ruffle;
+                            var gameContainer = document.querySelector('#game-container, #flash, .gamebox, #flashgame');
+                            if (!gameContainer) gameContainer = document.body;
+                            gameContainer.innerHTML = '';
+                            gameContainer.style.background = '#000';
+                            gameContainer.style.width = '100%';
+                            gameContainer.style.height = '100vh';
+                            
+                            var player = window.RufflePlayer.newest().createPlayer();
+                            player.style.width = '100%';
+                            player.style.height = '100%';
+                            gameContainer.appendChild(player);
+                            player.load(swfUrl);
+                        }
+                    };
+                    document.head.appendChild(script);
+                }
             })();
         """.trimIndent()
         binding.webView.evaluateJavascript(script, null)
     }
 
     private fun openSwfPlayer(swfUrl: String) {
-        // 全屏SWF播放页面
         val html = """
             <!DOCTYPE html>
             <html>
@@ -200,7 +204,6 @@ class MainActivity : AppCompatActivity() {
             </html>
         """.trimIndent()
         binding.webView.loadDataWithBaseURL(swfUrl, html, "text/html", "utf-8", null)
-        // 自动进入全屏
         toggleFullscreen()
     }
 
@@ -282,11 +285,15 @@ class MainActivity : AppCompatActivity() {
                     or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
                     or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
             )
+            // 全屏时自动横屏
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
         } else {
             supportActionBar?.show()
             binding.toolbarLayout.visibility = View.VISIBLE
             binding.bottomBar.visibility = View.VISIBLE
             window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_VISIBLE
+            // 退出全屏切回竖屏
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         }
     }
 
