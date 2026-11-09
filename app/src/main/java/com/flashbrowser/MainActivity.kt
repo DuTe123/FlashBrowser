@@ -7,12 +7,14 @@ import android.view.MotionEvent
 import android.view.View
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import com.flashbrowser.databinding.ActivityMainBinding
+import java.io.ByteArrayInputStream
 
 class MainActivity : AppCompatActivity() {
 
@@ -59,6 +61,7 @@ class MainActivity : AppCompatActivity() {
             userAgentString = DESKTOP_UA
             databaseEnabled = true
             cacheMode = android.webkit.WebSettings.LOAD_DEFAULT
+            setSupportMultipleWindows(false)
         }
 
         binding.webView.webViewClient = object : WebViewClient() {
@@ -67,7 +70,7 @@ class MainActivity : AppCompatActivity() {
                 request: WebResourceRequest?
             ): Boolean {
                 val url = request?.url?.toString() ?: return false
-                // 所有链接都在当前WebView打开
+                // 检测SWF文件，直接打开Ruffle播放器
                 if (url.endsWith(".swf") || url.contains(".swf?")) {
                     openSwfPlayer(url)
                     return true
@@ -102,11 +105,28 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun injectRuffle() {
+        // 注入脚本：1. 伪装Flash插件 2. 加载Ruffle 3. 替换Flash内容
         val script = """
             (function() {
                 if (window.ruffleInjected) return;
                 window.ruffleInjected = true;
                 
+                // 伪装Flash插件，让网站以为有Flash
+                if (!navigator.plugins.namedItem('Shockwave Flash')) {
+                    var fakePlugin = {
+                        name: 'Shockwave Flash',
+                        filename: 'NPSWF32_33_0_0_387.dll',
+                        description: 'Shockwave Flash 33.0 r0',
+                        version: '33.0.0.387'
+                    };
+                    navigator.plugins.push(fakePlugin);
+                }
+                if (!navigator.mimeTypes.namedItem('application/x-shockwave-flash')) {
+                    var fakeMime = { type: 'application/x-shockwave-flash', suffixes: 'swf', description: 'Shockwave Flash' };
+                    navigator.mimeTypes.push(fakeMime);
+                }
+                
+                // 加载Ruffle
                 var script = document.createElement('script');
                 script.src = 'https://unpkg.com/@ruffle-rs/ruffle';
                 script.onload = function() {
@@ -114,13 +134,15 @@ class MainActivity : AppCompatActivity() {
                         window.RufflePlayer = window.Ruffle;
                         
                         // 查找所有Flash对象
-                        var flashObjects = document.querySelectorAll('object, embed, [class*="flash"], [id*="flash"]');
+                        var flashObjects = document.querySelectorAll('object, embed');
                         flashObjects.forEach(function(obj) {
                             var swfUrl = obj.data || obj.src;
                             if (swfUrl && (swfUrl.endsWith('.swf') || swfUrl.indexOf('.swf?') > -1)) {
                                 var container = document.createElement('div');
                                 container.style.width = '100%';
                                 container.style.height = '100%';
+                                container.style.position = 'relative';
+                                container.style.background = '#000';
                                 obj.parentNode?.replaceChild(container, obj);
                                 
                                 var player = window.RufflePlayer.newest().createPlayer();
@@ -129,6 +151,16 @@ class MainActivity : AppCompatActivity() {
                                 container.appendChild(player);
                                 
                                 player.load(swfUrl);
+                            }
+                        });
+                        
+                        // 查找iframe里的游戏
+                        var iframes = document.querySelectorAll('iframe');
+                        iframes.forEach(function(iframe) {
+                            var src = iframe.src || '';
+                            if (src.indexOf('.swf') > -1) {
+                                iframe.style.width = '100%';
+                                iframe.style.height = '600px';
                             }
                         });
                     }
@@ -140,15 +172,17 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openSwfPlayer(swfUrl: String) {
+        // 全屏SWF播放页面
         val html = """
             <!DOCTYPE html>
             <html>
             <head>
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
                 <title>Flash Player</title>
                 <style>
-                    body { margin: 0; background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; }
-                    #player { width: 100%; height: 100%; }
+                    * { margin: 0; padding: 0; box-sizing: border-box; }
+                    body { background: #000; width: 100vw; height: 100vh; overflow: hidden; }
+                    #player { width: 100vw; height: 100vh; }
                 </style>
                 <script src="https://unpkg.com/@ruffle-rs/ruffle"></script>
             </head>
@@ -166,6 +200,8 @@ class MainActivity : AppCompatActivity() {
             </html>
         """.trimIndent()
         binding.webView.loadDataWithBaseURL(swfUrl, html, "text/html", "utf-8", null)
+        // 自动进入全屏
+        toggleFullscreen()
     }
 
     private fun handleVirtualMouse(event: MotionEvent): Boolean {
@@ -173,19 +209,15 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupToolbar() {
-        // 前往按钮
         binding.btnGo.setOnClickListener {
             var input = binding.etAddress.text.toString().trim()
             if (input.isEmpty()) return@setOnClickListener
             
             var url = input
-            // 如果不是网址，用百度搜索
             if (!url.startsWith("http://") && !url.startsWith("https://")) {
-                // 如果看起来像域名
                 if (url.contains(".") && !url.contains(" ")) {
                     url = "https://$url"
                 } else {
-                    // 用百度搜索
                     url = "https://www.baidu.com/s?wd=$url"
                 }
             }
@@ -193,7 +225,6 @@ class MainActivity : AppCompatActivity() {
             binding.etAddress.clearFocus()
         }
 
-        // 回车键
         binding.etAddress.setOnKeyListener { _, keyCode, event ->
             if (keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN) {
                 binding.btnGo.performClick()
