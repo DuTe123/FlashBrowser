@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.FlashBrowser" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">#e94560</item>
+        <item name="colorPrimaryVariant">#0f3460</item>
+        <item name="colorOnPrimary">#ffffff</item>
+        <item name="colorSecondary">#e94560</item>
+        <item name="colorSecondaryVariant">#0f3460</item>
+        <item name="colorOnSecondary">#ffffff</item>
+        <item name="android:statusBarColor">#16213e</item>
+    </style>
+</resources>
